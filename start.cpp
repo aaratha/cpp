@@ -2,12 +2,13 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 
 // Constants
 const float PI = 3.14159265358979323846f;
 
 // Simulation parameters
-float k = 10.0f;
+float k = 15.0f;
 float mass = 1.0f;
 float damping = 0.1f;
 float restLengthX = 0.0f;
@@ -15,11 +16,11 @@ float restLengthY = 0.0f;
 
 // Mouse interaction parameters
 bool isDragging = false;
-float mouseSpringConstant = 10.5f;
+float mouseSpringConstant = 95.0f;
 double mouseX = 0.0f, mouseY = 0.0f;
 
 // State variables
-float positionX = 0.5f;
+float positionX = 0.0f;
 float positionY = 0.0f;
 float velocityX = 0.0f;
 float velocityY = 0.0f;
@@ -31,28 +32,35 @@ void screenToWorld(GLFWwindow* window, double sx, double sy, double& wx, double&
     wy = sy / height; // Normalize y coordinate to range [0, 1]
 }
 
+float lastPositionX = positionX;
+float lastPositionY = positionY;
+
 void updatePhysics(float dt) {
-    float forceX = -k * (positionX - restLengthX);
-    float forceY = -k * (positionY - restLengthY);
+    // Compute forces
+    float forceX = -k * (positionX - restLengthX) + (isDragging ? mouseSpringConstant * (mouseX - positionX) : 0.0f);
+    float forceY = -k * (positionY - restLengthY) + (isDragging ? mouseSpringConstant * (mouseY - positionY) : 0.0f);
 
-    if (isDragging) {
-        float mouseForceX = mouseSpringConstant * (mouseX - positionX);
-        float mouseForceY = mouseSpringConstant * (mouseY - positionY);
-        forceX += mouseForceX;
-        forceY += mouseForceY;
-    }
-
+    // Damping forces
     forceX -= damping * velocityX;
     forceY -= damping * velocityY;
 
+    // Calculate acceleration
     float accelerationX = forceX / mass;
     float accelerationY = forceY / mass;
 
+    // Semi-implicit Euler integration for velocity
     velocityX += accelerationX * dt;
     velocityY += accelerationY * dt;
-    positionX += velocityX * dt;
-    positionY += velocityY * dt;
+
+    // Verlet integration for position
+    float tempPosX = positionX;
+    float tempPosY = positionY;
+    positionX = 2.0f * positionX - lastPositionX + accelerationX * dt * dt;
+    positionY = 2.0f * positionY - lastPositionY + accelerationY * dt * dt;
+    lastPositionX = tempPosX;
+    lastPositionY = tempPosY;
 }
+
 
 void render() {
     glClear(GL_COLOR_BUFFER_BIT);
@@ -83,7 +91,14 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 
 void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
     if (isDragging) {
-        screenToWorld(window, xpos, ypos, mouseX, mouseY);
+        // Convert screen coordinates (xpos, ypos) to world coordinates
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);  // Get the window size
+
+        // Assuming your world coordinates are normalized [-1, 1] for both x and y
+        mouseX = (xpos / width) * 2.0f - 1.0f;
+        mouseY = (ypos / height) * 2.0f - 1.0f;
+        mouseY = -mouseY; // Invert Y if necessary based on your coordinate system
     }
 }
 
