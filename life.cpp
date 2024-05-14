@@ -32,7 +32,7 @@ bool isAlive(
 
     if (state == 1 && neighbors < 2) return false;
     if (state == 1 && (neighbors == 2 || neighbors == 3)) return true;
-    if (state == 1 && neighbors > 3) return false;
+    if (state == 1 && neighbors > 5) return false;
     if (state == 0 && neighbors == 3) return true;
 
     return false;
