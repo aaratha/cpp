@@ -7,7 +7,6 @@
 
 // Constants
 const float PI = 3.14159265358979323846f;
-const float PARTICLE_CREATION_INTERVAL = 0.1f; // Time interval in seconds
 
 // Simulation parameters
 const float g = 9.8f;
@@ -22,17 +21,6 @@ bool isDragging = false;
 bool isSpacePressed = false;
 double mouseX = 0.0f, mouseY = 0.0f;
 
-// State variables for the original ball
-float positionX = 0.0f;
-float positionY = 0.0f;
-float velocityX = 0.0f;
-float velocityY = 0.0f;
-float restLengthX = 0.0f; // Rest length for the spring (center of the bowl)
-float restLengthY = 0.0f;
-
-float lastPositionX = positionX;
-float lastPositionY = positionY;
-
 // Particle structure
 struct Particle {
     float positionX;
@@ -46,6 +34,7 @@ struct Particle {
 // Particle system
 std::vector<Particle> particles;
 
+const float PARTICLE_CREATION_INTERVAL = 0.1f; // Time interval in seconds
 float lastParticleCreationTime = 0.0f;
 
 void screenToWorld(GLFWwindow* window, double sx, double sy, double& wx, double& wy) {
@@ -63,34 +52,6 @@ void verletIntegration(float& position, float& lastPosition, float velocity, flo
 }
 
 void updatePhysics(float dt) {
-    // Update the original ball with spring physics
-    float forceX = -k * (positionX - restLengthX) + (isDragging ? k * (mouseX - positionX) : 0.0f);
-    float forceY = -k * (positionY - restLengthY) + (isDragging ? k * (mouseY - positionY) : 0.0f) - g * mass;
-
-    forceX -= damping * velocityX;
-    forceY -= damping * velocityY;
-
-    float accelerationX = forceX / mass;
-    float accelerationY = forceY / mass;
-
-    verletIntegration(positionX, lastPositionX, velocityX, accelerationX, dt);
-    verletIntegration(positionY, lastPositionY, velocityY, accelerationY, dt);
-
-    float distanceFromOrigin = sqrt(positionX * positionX + positionY * positionY);
-    if (distanceFromOrigin + ballRadius > bowlRadius) {
-        float overlap = (distanceFromOrigin + ballRadius) - bowlRadius;
-        float normalizationFactor = distanceFromOrigin / (distanceFromOrigin + overlap);
-        positionX *= normalizationFactor;
-        positionY *= normalizationFactor;
-
-        float normalX = positionX / distanceFromOrigin;
-        float normalY = positionY / distanceFromOrigin;
-        float dotProduct = velocityX * normalX + velocityY * normalY;
-        velocityX = velocityX - 2 * dotProduct * normalX;
-        velocityY = velocityY - 2 * dotProduct * normalY;
-        velocityX *= 0.8f;
-        velocityY *= 0.8f;
-    }
 
     for (auto& particle : particles) {
         float forceX = -damping * particle.velocityX;
@@ -147,34 +108,6 @@ void updatePhysics(float dt) {
             }
         }
     }
-
-    for (auto& particle : particles) {
-        float dx = particle.positionX - positionX;
-        float dy = particle.positionY - positionY;
-        float distance = sqrt(dx * dx + dy * dy);
-        if (distance < 2 * ballRadius) {
-            float overlap = 2 * ballRadius - distance;
-            float nx = dx / distance;
-            float ny = dy / distance;
-            positionX -= nx * overlap / 2;
-            positionY -= ny * overlap / 2;
-            particle.positionX += nx * overlap / 2;
-            particle.positionY += ny * overlap / 2;
-
-            float vi_dot_n = velocityX * nx + velocityY * ny;
-            float vj_dot_n = particle.velocityX * nx + particle.velocityY * ny;
-            float vi_nx = vi_dot_n * nx;
-            float vi_ny = vi_dot_n * ny;
-            float vj_nx = vj_dot_n * nx;
-            float vj_ny = vj_dot_n * ny;
-
-            velocityX = velocityX - vi_nx + vj_nx;
-            velocityY = velocityY - vi_ny + vj_ny;
-            particle.velocityX = particle.velocityX - vj_nx + vi_nx;
-            particle.velocityY = particle.velocityY - vj_ny + vi_ny;
-        }
-    }
-
     // Add new particles if the spacebar is held down and enough time has passed
     static float timeElapsed = 0.0f;
     timeElapsed += dt;
@@ -188,18 +121,6 @@ void updatePhysics(float dt) {
 void render() {
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glBegin(GL_POLYGON);
-    for (int i = 0; i < 360; i++) {
-        float degInRad = i * PI / 180;
-        glVertex2f(cos(degInRad) * ballRadius + positionX, sin(degInRad) * ballRadius + positionY);
-    }
-    glEnd();
-
-    glBegin(GL_LINES);
-    glVertex2f(restLengthX, restLengthY);
-    glVertex2f(positionX, positionY);
-    glEnd();
-
     for (const auto& particle : particles) {
         glBegin(GL_POLYGON);
         for (int i = 0; i < 360; i++) {
@@ -209,6 +130,7 @@ void render() {
         glEnd();
     }
 
+    // render circular bowl
     glBegin(GL_LINE_LOOP);
     for (int i = 0;  i < 360; i++) {
         float degInRad = i * PI / 180;
@@ -222,15 +144,6 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
         screenToWorld(window, xpos, ypos, mouseX, mouseY);
-        if (action == GLFW_PRESS) {
-            float dx = mouseX - positionX;
-            float dy = mouseY - positionY;
-            if (sqrt(dx * dx + dy * dy) < ballRadius) {
-                isDragging = true;
-            }
-        } else if (action == GLFW_RELEASE) {
-            isDragging = false;
-        }
     }
 }
 

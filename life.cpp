@@ -8,9 +8,10 @@
 #include <thread>
 #include <chrono>
 
-const int GAME_WIDTH = 64;
-const int GAME_HEIGHT = 48;
+const int GAME_WIDTH = 100;
+const int GAME_HEIGHT = 100;
 const int CELL_SIZE = 10;
+const int DELAY = 70;
 
 bool isAlive(
     const std::array<std::array<int, GAME_HEIGHT>, GAME_WIDTH>& game,
@@ -65,32 +66,35 @@ void setupOpenGL(int width, int height) {
     glLoadIdentity();
 }
 
-// Function to place a pattern (e.g., a glider or a 3-cell line) centered at (cellX, cellY)
 void placePattern(std::array<std::array<int, GAME_HEIGHT>, GAME_WIDTH>& game, int cellX, int cellY) {
-    // Define a 3-cell horizontal line as the pattern
     if (cellX >= 0 && cellX < GAME_WIDTH && cellY >= 0 && cellY < GAME_HEIGHT) {
-        game[cellX][cellY] = 1; // Center cell
-        if (cellX > 0) game[cellX - 1][cellY] = 1; // Left cell
-        if (cellX < GAME_WIDTH - 1) game[cellX + 1][cellY] = 1; // Right cell
+        game[cellX][cellY] = 1; // Toggle cell state
     }
 }
 
-// Mouse button callback to change the state of a cell
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        double xpos, ypos;
-        glfwGetCursorPos(window, &xpos, &ypos);
-        std::cout << "Mouse click at (" << xpos << ", " << ypos << ")" << std::endl;
+    static bool isDragging = false;
 
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            isDragging = true;
+        } else if (action == GLFW_RELEASE) {
+            isDragging = false;
+        }
+    }
+}
+
+void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+    static bool isDragging = false;
+
+    int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+    if (state == GLFW_PRESS) {
         int cellX = static_cast<int>(xpos) / CELL_SIZE;
         int cellY = static_cast<int>(ypos) / CELL_SIZE;
-
-        std::cout << "Grid cell (" << cellX << ", " << cellY << ")" << std::endl;
 
         if (cellX >= 0 && cellX < GAME_WIDTH && cellY >= 0 && cellY < GAME_HEIGHT) {
             std::array<std::array<int, GAME_HEIGHT>, GAME_WIDTH>* displayPtr = static_cast<std::array<std::array<int, GAME_HEIGHT>, GAME_WIDTH>*>(glfwGetWindowUserPointer(window));
             placePattern(*displayPtr, cellX, cellY);
-            std::cout << "Pattern placed at (" << cellX << ", " << cellY << ")" << std::endl;
         }
     }
 }
@@ -123,26 +127,36 @@ int main() {
     std::array<std::array<int, GAME_HEIGHT>, GAME_WIDTH> display {};
     std::array<std::array<int, GAME_HEIGHT>, GAME_WIDTH> swap {};
 
+    // Initialize display to be blank
     for (auto& row : display) {
-        std::generate(row.begin(), row.end(), []() { return rand() % 10 == 0 ? 1 : 0; });
+        std::fill(row.begin(), row.end(), 0);
     }
 
     // Set the user pointer to the display array for the mouse callback
     glfwSetWindowUserPointer(window, &display);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetCursorPosCallback(window, cursorPosCallback);
 
+    bool startSimulation = false;
     while (!glfwWindowShouldClose(window)) {
-        for (int x = 0; x < GAME_WIDTH; ++x) {
-            for (int y = 0; y < GAME_HEIGHT; ++y) {
-                swap[x][y] = isAlive(display, x, y) ? 1 : 0;
-            }
-        }
-        std::swap(display, swap);
         glClear(GL_COLOR_BUFFER_BIT);
         drawGrid(display);
         glfwSwapBuffers(window);
         glfwPollEvents();
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS) {
+            startSimulation = true;
+        }
+
+        if (startSimulation) {
+            for (int x = 0; x < GAME_WIDTH; ++x) {
+                for (int y = 0; y < GAME_HEIGHT; ++y) {
+                    swap[x][y] = isAlive(display, x, y) ? 1 : 0;
+                }
+            }
+            std::swap(display, swap);
+            std::this_thread::sleep_for(std::chrono::milliseconds(DELAY));
+        }
     }
 
     glfwTerminate();
