@@ -2,17 +2,17 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cmath>
-#include <algorithm>
 #include <vector>
 
 const float PI = 3.14159f;
 const float g = 9.81f;
 const float mass = 1.0f;
-const float partRadius = 0.05f; // Fixed typo
-const float partCreationInterval = 0.1f;
+const float partRadius = 0.04f;
+const float partCreationInterval = 0.0f;
+const float damping = 0.0f;  // Adjusted damping factor
 
 float lastPartCreationTime = 0.0f;
-bool isSpacePressed = false;
+bool isMousePressed = false;
 double mouseX = 0.0f, mouseY = 0.0f;
 
 struct Particle {
@@ -34,11 +34,10 @@ void screenToWorld(
     double& wy
 ) {
     int width, height;
-    glfwGetWindowSize(window, &width, &height); // Corrected syntax with semicolon
+    glfwGetWindowSize(window, &width, &height);
 
-    // Convert screen coordinates (sx, sy) to world coordinates (wx, wy)
-    wx = (sx / width * 2.0) - 1.0;
-    wy = 1.0 - (sy / height * 2.0);
+    wx = (sx / width) * 2.0 - 1.0;
+    wy = 1.0 - (sy / height) * 2.0;
 }
 
 void verlet(
@@ -50,6 +49,11 @@ void verlet(
     float nextPosition = 2.0f * position - lastPosition + acceleration * dt * dt;
     lastPosition = position;
     position = nextPosition;
+}
+
+void updateVelocity(Particle& particle, float dt) {
+    particle.velX = (particle.posX - particle.lastPosX) / dt;
+    particle.velY = (particle.posY - particle.lastPosY) / dt;
 }
 
 void resolveCollision(Particle& p1, Particle& p2, float nx, float ny, float overlap) {
@@ -72,7 +76,10 @@ void resolveCollision(Particle& p1, Particle& p2, float nx, float ny, float over
     p2.velY = p2.velY - vj_ny + vi_ny;
 }
 
-void updatePhysics(float dt) {
+void updatePhysics(GLFWwindow* window, float dt) {
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+
     const float forceX = 0.0f;
     const float forceY = -g * mass;
     const float accelX = forceX / mass;
@@ -82,6 +89,26 @@ void updatePhysics(float dt) {
     for (auto& particle : particles) {
         verlet(particle.posX, particle.lastPosX, accelX, dt);
         verlet(particle.posY, particle.lastPosY, accelY, dt);
+
+        updateVelocity(particle, dt);
+
+        // Check for border collisions and respond accordingly
+        if (particle.posX - partRadius < -1.0f) {
+            particle.posX = -1.0f + partRadius;
+            particle.velX *= -1.0f;
+        }
+        if (particle.posX + partRadius > 1.0f) {
+            particle.posX = 1.0f - partRadius;
+            particle.velX *= -1.0f;
+        }
+        if (particle.posY - partRadius < -1.0f) {
+            particle.posY = -1.0f + partRadius;
+            particle.velY *= -1.0f;
+        }
+        if (particle.posY + partRadius > 1.0f) {
+            particle.posY = 1.0f - partRadius;
+            particle.velY *= -1.0f;
+        }
     }
 
     for (size_t i = 0; i < particles.size(); ++i) {
@@ -100,4 +127,80 @@ void updatePhysics(float dt) {
             }
         }
     }
+
+    static float timeElapsed = 0.0f;
+    timeElapsed += dt;
+    if (isMousePressed && timeElapsed - lastPartCreationTime >= partCreationInterval) {
+        Particle newParticle = { static_cast<float>(mouseX), static_cast<float>(mouseY), 0.0f, 0.0f, static_cast<float>(mouseX), static_cast<float>(mouseY) };
+        particles.push_back(newParticle);
+        lastPartCreationTime = timeElapsed;
+    }
+}
+
+void render(float time) {
+    glClear(GL_COLOR_BUFFER_BIT);
+    for (const auto& particle : particles) {
+        float r = 0.5f + 0.5f * sin(time);
+        float g = 0.5f + 0.5f * sin(time + 2.0f * PI / 3.0f); // Phase shift for green
+        float b = 0.5f + 0.5f * sin(time + 4.0f * PI / 3.0f); // Phase shift for blue
+        glColor3f(r, g, b);
+        glBegin(GL_POLYGON);
+        for (int i = 0; i < 360; i++) {
+            float degInRad = i * PI / 180;
+            glVertex2f(
+                cos(degInRad) * partRadius + particle.posX,
+                sin(degInRad) * partRadius + particle.posY
+            );
+        }
+        glEnd();
+    }
+}
+
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        double xpos, ypos;
+        glfwGetCursorPos(window, &xpos, &ypos);
+        screenToWorld(window, xpos, ypos, mouseX, mouseY);
+        if (action == GLFW_PRESS) {
+            isMousePressed = true;
+        } else if (action == GLFW_RELEASE) {
+            isMousePressed = false;
+        }
+    }
+}
+
+int main() {
+    GLFWwindow* window;
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW\n";
+        return -1;
+    }
+    window = glfwCreateWindow(640, 640, "Particle Simulation", NULL, NULL);
+    if (!window) {
+        glfwTerminate();
+        std::cerr << "Failed to create GLFW window\n";
+        return -1;
+    }
+
+    glfwMakeContextCurrent(window);
+    glewInit();
+
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+
+    float lastTime = glfwGetTime();
+
+    while (!glfwWindowShouldClose(window)) {
+        float currentTime = glfwGetTime();
+        float dt = currentTime - lastTime;
+        lastTime = currentTime;
+
+        updatePhysics(window, dt);
+        render(currentTime);
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
 }
